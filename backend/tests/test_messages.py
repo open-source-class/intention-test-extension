@@ -9,10 +9,10 @@ class TestStatusMessage:
 
     def test_to_bytes_with_string_message(self):
         """Test serialization with a string message."""
-        from server import StatusMessage
+        from modules.messages import StatusMessage
 
         msg = StatusMessage(status="running", message="Processing...")
-        result = msg.response()
+        result = msg.to_bytes()
 
         assert isinstance(result, bytes)
         parsed = json.loads(result.decode())
@@ -22,20 +22,20 @@ class TestStatusMessage:
 
     def test_to_bytes_with_empty_message(self):
         """Test serialization with default empty message."""
-        from server import StatusMessage
+        from modules.messages import StatusMessage
 
         msg = StatusMessage(status="done")
-        result = msg.response()
+        result = msg.to_bytes()
 
         parsed = json.loads(result.decode())
         assert parsed["data"]["message"] == ""
 
     def test_to_bytes_with_dict_message(self):
         """Test serialization with a dict message."""
-        from server import StatusMessage
+        from modules.messages import StatusMessage
 
         msg = StatusMessage(status="error", message={"code": 500, "reason": "Internal"})
-        result = msg.response()
+        result = msg.to_bytes()
 
         parsed = json.loads(result.decode())
         assert parsed["data"]["message"]["code"] == 500
@@ -46,10 +46,10 @@ class TestModelMessage:
 
     def test_to_bytes(self):
         """Test basic serialization."""
-        from server import ModelMessage
+        from modules.messages import ModelMessage
 
         msg = ModelMessage(data={"content": "Hello", "role": "assistant"})
-        result = msg.response()
+        result = msg.to_bytes()
 
         parsed = json.loads(result.decode())
         assert parsed["type"] == "msg"
@@ -61,10 +61,10 @@ class TestNoRefMessage:
 
     def test_to_bytes(self):
         """Test basic serialization."""
-        from server import NoRefMessage
+        from modules.messages import NoRefMessage
 
         msg = NoRefMessage(data={"reason": "No references found"})
-        result = msg.response()
+        result = msg.to_bytes()
 
         parsed = json.loads(result.decode())
         assert parsed["type"] == "noreference"

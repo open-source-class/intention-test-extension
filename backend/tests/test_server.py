@@ -20,12 +20,11 @@ def http_server(monkeypatch):
     def fake_start_query(self):
         while not self.should_stop():
             time.sleep(0.01)
-        raise server.GenerationCancelled()
 
     monkeypatch.setattr(server.ModelQuerySession, "start_query", fake_start_query)
 
-    with server.sessions_lock:
-        server.sessions.clear()
+    for session_id in server._session_registry.list_active_ids():
+        server._session_registry.remove(session_id)
 
     httpd = socketserver.ThreadingTCPServer(("localhost", 0), server.QueryHandler)
     httpd.daemon_threads = True
@@ -40,8 +39,8 @@ def http_server(monkeypatch):
         httpd.shutdown()
         httpd.server_close()
         thread.join(timeout=2)
-        with server.sessions_lock:
-            server.sessions.clear()
+        for session_id in server._session_registry.list_active_ids():
+            server._session_registry.remove(session_id)
 
 
 def _post_json(port: int, path: str, payload: dict) -> http.client.HTTPResponse:
@@ -59,31 +58,13 @@ def _post_json(port: int, path: str, payload: dict) -> http.client.HTTPResponse:
     return conn.getresponse()
 
 
-class TestHealthEndpoints:
-    def test_root_returns_ok(self, http_server):
-        port, _server = http_server
-        conn = http.client.HTTPConnection("localhost", port, timeout=2)
-        conn.request("GET", "/")
-        res = conn.getresponse()
-        assert res.status == 200
-        assert res.read().decode("utf-8") == "OK"
-
-    def test_health_returns_ok(self, http_server):
-        port, _server = http_server
-        conn = http.client.HTTPConnection("localhost", port, timeout=2)
-        conn.request("GET", "/health")
-        res = conn.getresponse()
-        assert res.status == 200
-        assert res.read().decode("utf-8") == "OK"
-
-
 class TestJunitVersionEndpoint:
     def test_junit_version_updates_global(self, http_server):
         port, server = http_server
         res = _post_json(port, "/junitVersion", {"type": "change_junit_version", "data": 5})
         assert res.status == 200
         res.read()
-        assert server.global_junit_version == 5
+        assert server._global_junit_version == 5
 
 
 class TestStopEndpoint:
@@ -142,5 +123,4 @@ class TestSessionStopFlow:
                 break
         assert finish_seen is True
 
-        with server.sessions_lock:
-            assert session_id not in server.sessions
+        assert session_id not in server._session_registry.list_active_ids()

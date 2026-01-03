@@ -5,13 +5,16 @@ Tests for backend/server.py session utilities.
 from __future__ import annotations
 
 import json
+import io
+
+import pytest
 
 
-class DummyHandler:
+class DummyWriter:
     def __init__(self):
         self.written: list[bytes] = []
 
-    def write_single_line(self, data: bytes):
+    def __call__(self, data: bytes):
         self.written.append(data)
 
 
@@ -27,69 +30,93 @@ def _minimal_raw_data():
 
 class TestModelQuerySession:
     def test_required_fields(self):
-        import server
+        from modules.session import ModelQuerySession
 
-        assert "target_focal_method" in server.ModelQuerySession.required_fields
-        assert "test_desc" in server.ModelQuerySession.required_fields
-        assert len(server.ModelQuerySession.required_fields) == 5
+        assert "target_focal_method" in ModelQuerySession.required_fields
+        assert "test_desc" in ModelQuerySession.required_fields
+        assert len(ModelQuerySession.required_fields) == 5
 
     def test_request_stop_and_should_stop(self):
-        import server
+        from modules.session import ModelQuerySession
 
-        session = server.ModelQuerySession("sess-1", _minimal_raw_data(), DummyHandler())
+        writer = DummyWriter()
+        session = ModelQuerySession("sess-1", _minimal_raw_data(), writer, lambda *_: None, 4)
 
         assert session.should_stop() is False
         session.request_stop()
         assert session.should_stop() is True
 
     def test_write_start_message(self):
-        import server
+        from modules.session import ModelQuerySession
 
-        handler = DummyHandler()
-        session = server.ModelQuerySession("sess-2", _minimal_raw_data(), handler)
+        writer = DummyWriter()
+        session = ModelQuerySession("sess-2", _minimal_raw_data(), writer, lambda *_: None, 4)
         session.write_start_message()
 
-        parsed = json.loads(handler.written[0].decode("utf-8"))
+        parsed = json.loads(writer.written[0].decode("utf-8"))
         assert parsed["type"] == "status"
         assert parsed["data"]["status"] == "start"
         assert parsed["data"]["message"]["session_id"] == "sess-2"
 
     def test_write_finish_message(self):
-        import server
+        from modules.session import ModelQuerySession
 
-        handler = DummyHandler()
-        session = server.ModelQuerySession("sess-3", _minimal_raw_data(), handler)
+        writer = DummyWriter()
+        session = ModelQuerySession("sess-3", _minimal_raw_data(), writer, lambda *_: None, 4)
         session.write_finish_message()
 
-        parsed = json.loads(handler.written[0].decode("utf-8"))
+        parsed = json.loads(writer.written[0].decode("utf-8"))
         assert parsed["type"] == "status"
         assert parsed["data"]["status"] == "finish"
         assert parsed["data"]["message"]["session_id"] == "sess-3"
 
     def test_update_messages(self):
-        import server
+        from modules.session import ModelQuerySession
 
-        handler = DummyHandler()
-        session = server.ModelQuerySession("sess-4", _minimal_raw_data(), handler)
+        writer = DummyWriter()
+        session = ModelQuerySession("sess-4", _minimal_raw_data(), writer, lambda *_: None, 4)
 
         messages = [{"role": "assistant", "content": "Hello"}]
         session.update_messages(messages)
 
-        parsed = json.loads(handler.written[0].decode("utf-8"))
+        parsed = json.loads(writer.written[0].decode("utf-8"))
         assert parsed["type"] == "msg"
         assert parsed["data"]["session_id"] == "sess-4"
         assert parsed["data"]["messages"] == messages
 
 
-class TestAssignToSession:
-    def test_assign_registers_session(self):
+class DummyHandler:
+    def __init__(self):
+        self.wfile = io.BytesIO()
+
+
+class TestValidateQueryPayload:
+    def test_validate_query_payload(self):
         import server
 
-        handler = DummyHandler()
-        query_text = json.dumps({"type": "query", "data": _minimal_raw_data()})
-        session = server.assign_to_session(query_text, handler)
+        payload = {"type": "query", "data": _minimal_raw_data()}
+        result = server.validate_query_payload(payload)
 
-        assert session is not None
-        with server.sessions_lock:
-            assert session.session_id in server.sessions
-            server.sessions.clear()
+        assert result["data"] == _minimal_raw_data()
+        assert result["session_id"]
+
+    def test_validate_query_payload_missing_fields(self):
+        import server
+
+        payload = {"type": "query", "data": {}}
+        with pytest.raises(ValueError):
+            server.validate_query_payload(payload)
+
+
+class TestBuildSession:
+    def test_build_session_returns_session(self):
+        import server
+        from modules.session import ModelQuerySession
+
+        handler = DummyHandler()
+        payload = {"session_id": "sess-5", "data": _minimal_raw_data()}
+
+        session = server.build_session(payload, handler)
+
+        assert isinstance(session, ModelQuerySession)
+        assert session.session_id == "sess-5"
