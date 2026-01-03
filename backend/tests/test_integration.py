@@ -21,6 +21,9 @@ def test_generation_cancelled_before_work(monkeypatch):
         def __init__(self, *_args, **_kwargs):
             pass
 
+        def set_cancel_check(self, _check):
+            pass
+
         def generate_test_case(self, *_args, **_kwargs):
             raise AssertionError("generate_test_case should not be called when cancelled")
 
@@ -29,6 +32,9 @@ def test_generation_cancelled_before_work(monkeypatch):
 
     class DummyRefineAgent:
         def __init__(self, *_args, **_kwargs):
+            pass
+
+        def set_cancel_check(self, _check):
             pass
 
         def refine(self, *_args, **_kwargs):
