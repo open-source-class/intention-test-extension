@@ -5,7 +5,7 @@ import shutil
 from generator import IntentionTester
 from dataset import Dataset
 from configs import Configs
-from server import ModelQuerySession
+from modules.session import ModelQuerySession
 from typing import Optional
 import pathlib
 from extension_api.collect_pairs.main import dump_collect_pairs
