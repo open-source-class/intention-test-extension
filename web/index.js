@@ -248,6 +248,22 @@ function enhanceMessageElement(messageElement) {
     const codeBlocks = messageElement.querySelectorAll('pre code');
     codeBlocks.forEach((block) => {
         hljs.highlightElement(block);
+        const pre = block.parentElement;
+        if (pre && !pre.querySelector('.code-copy-button')) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'code-copy-button';
+            button.textContent = '复制';
+            button.addEventListener('click', async () => {
+                const codeText = block.textContent ?? '';
+                const copied = await copyToClipboard(codeText);
+                button.textContent = copied ? '已复制' : '复制失败';
+                setTimeout(() => {
+                    button.textContent = '复制';
+                }, 1200);
+            });
+            pre.appendChild(button);
+        }
     });
 
     messageElement.querySelectorAll('code').forEach((inlineCode) => {
@@ -255,6 +271,36 @@ function enhanceMessageElement(messageElement) {
             hljs.highlightElement(inlineCode);
         }
     });
+}
+
+async function copyToClipboard(text) {
+    if (!text) {
+        return false;
+    }
+    if (navigator.clipboard?.writeText) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (error) {
+            console.warn('[IntentionTest] Clipboard write failed:', error);
+        }
+    }
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    let success = false;
+    try {
+        success = document.execCommand('copy');
+    } catch (error) {
+        console.warn('[IntentionTest] execCommand copy failed:', error);
+        success = false;
+    }
+    document.body.removeChild(textarea);
+    return success;
 }
 
 function showTypingAnimation(sender) {
