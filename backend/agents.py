@@ -6,7 +6,7 @@ from typing import Callable
 
 from openai import OpenAI
 
-from exceptions import GenerationCancelled
+from modules.exceptions import GenerationCancelled
 
 
 class Agent:
@@ -26,7 +26,13 @@ class Agent:
 
     def get_response(self, messages, n=1, skip_deepseek_think: bool=False):
         self._check_cancel()
-        if self.model_name == 'gpt-4o' or self.model_name == 'gpt-3.5-turbo':
+        if self.model_name in (
+            'gpt-4o',
+            'gpt-3.5-turbo',
+            'qwen-plus',
+            'qwen-coder-plus',
+            'qwen-long-latest',
+        ):
             if self.system_prompt:
                 messages = [{'role': 'system', 'content': self.system_prompt}] + messages
             response = self._get_gpt_response(messages, n=n)

@@ -1,299 +1,194 @@
-import socket
-import http.server
+from __future__ import annotations
+
+import argparse
+import json
+import logging
 import socketserver
 import threading
-import datetime
-import json
-from time import strftime
-from xml.etree.ElementPath import prepare_child
-import logging
-import sys
-import traceback
-import argparse
-import main
-import hashlib
-import uuid
-from typing import Optional, Union
+from http.server import BaseHTTPRequestHandler
+from typing import Any, Dict
 
-from exceptions import GenerationCancelled
-from session_registry import SessionRegistry
+try:
+    from backend import main as generation_entry_module  # when run as package
+except ImportError:
+    import main as generation_entry_module  # when invoked from backend directory
+from modules.registry import SessionRegistry
+from modules.session import ModelQuerySession
 
-port = 8080
-
-# a standard python logger
 logger = logging.getLogger(__name__)
-# basiConfig can only be called once
-logging.basicConfig(stream=sys.stdout, level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] [%(levelname)s] %(message)s",
+)
 
-global_junit_version = 4
-session_registry = SessionRegistry()
+DEFAULT_PORT = 8080
+_global_junit_version = 4
+_session_registry = SessionRegistry()
 
-class StatusMessage:
-    def __init__(self, status: str, message: Union[str, dict] = ''):
-        self.status = status
-        self.message = message
-    
-    def response(self):
-        return json.dumps({
-            "type": "status",
-            "data": {
-                "status": self.status,
-                "message": self.message
-            }
-        }).encode()
-
-class ModelMessage:
-    def __init__(self, data):
-        self.data = data
-    
-    def response(self):
-        return json.dumps({
-            "type": "msg",
-            "data": self.data
-        }).encode()
-    
-class NoRefMessage:
-    def __init__(self, data):
-        self.data = data
-    
-    def response(self):
-        return json.dumps({
-            "type": "noreference",
-            "data": self.data
-        }).encode()
-
-class QueryHandler(http.server.BaseHTTPRequestHandler):
-    def do_POST(self):
-        global global_junit_version
-
-        if self.path == '/session':
-
-            try:
-                self.request.settimeout(2.0)
-                query_text_bytes = self.rfile.read(int(self.headers['Content-Length']))
-                query_text = query_text_bytes.decode('utf-8')
-                self.request.settimeout(None)
-
-                try:
-                    query_session = assign_to_session(query_text, self)
-                except Exception as e:
-                    logger.error(f'Request may be invalid. Message: {e}. Request:\n{query_text}\n{traceback.format_exc()}')
-                    self.end_with_request_error(str(e))
-                    return
-                
-                if query_session:
-                    try:
-                        self.send_keep_alive_header()
-                        query_session.write_start_message()
-                        query_session.start_query()
-                        query_session.write_finish_message()
-                        self.end_session()
-                    finally:
-                        session_registry.remove(query_session.session_id)
-                else:
-                    raise ValueError("No query session can be constructed or retrieved from request")
-            
-            except Exception as e:
-                logger.error(f'Error handling request. Message: {e}. Request:\n{self.request}\n{traceback.format_exc()}')
-                self.end_with_internal_error(str(e))
-
-        elif self.path == '/junitVersion':
-            try:
-                self.request.settimeout(2.0)
-                junit_version = int(json.loads(self.rfile.read(int(self.headers['Content-Length'])).decode('utf-8'))['data'])
-                self.request.settimeout(None)
-
-                global_junit_version = junit_version
-            except Exception as e:
-                logger.error(f"Error handling request. Message: {e}. Request:\n{self.request}\n{traceback.format_exc()}")
-                self.end_with_internal_error(str(e))
-
-        elif self.path == '/session/stop':
-            try:
-                payload_length = int(self.headers.get('Content-Length', 0))
-                request_data = self.rfile.read(payload_length).decode('utf-8')
-                payload = json.loads(request_data)
-                session_id = payload.get('session_id')
-                if not session_id:
-                    self.end_with_request_error('Missing session_id')
-                    return
-                session = session_registry.get(session_id)
-                if not session:
-                    self.send_response(404, 'Session Not Found')
-                    self.end_headers()
-                    return
-                session.request_stop()
-                self.send_response(200, 'Stopping')
-                self.end_headers()
-            except json.JSONDecodeError as e:
-                logger.error(f'Error decoding stop payload: {e}')
-                self.end_with_request_error(str(e))
-            except Exception as e:
-                logger.error(f'Failed to stop session: {e}\n{traceback.format_exc()}')
-                self.end_with_internal_error(str(e))
-
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def send_keep_alive_header(self):
-        self.send_response(200, 'Success')
-        self.send_header('Content-type', 'application/json')   # this doesn't exist on <https://www.iana.org/assignments/media-types/media-types.xhtml#text>
-        self.send_header('Cache-Control', 'no-cache')
-        self.send_header('Connection', 'keep-alive')
-        self.end_headers()
-    
-    def end_with_error(self, code: int, error_msg: str, concrete_msg: str):
-        self.send_response(code, error_msg)
-        self.end_headers()
-        self.end_session()
-        # self.wfile.write(StatusMessage('error', concrete_msg).response())
-
-    def end_with_request_error(self, msg: str):
-        self.end_with_error(400, 'Bad Request', msg)
-
-    def end_with_internal_error(self, msg: str):
-        self.end_with_error(500, 'Internal Server Error', msg)
-
-    def end_session(self):
-        self.close_connection = True
-
-    def write_single_line(self, data: bytes):
-        self.wfile.write(data + b'\n')
-        self.wfile.flush()
-
-class ModelQuerySession:
-    '''Session persistent data.'''
-    required_fields = ['target_focal_method', 'target_focal_file', 'test_desc', 'project_path', 'focal_file_path']
-
-    def __init__(self, session_id: str, raw_data: dict, handler: QueryHandler):
-        self.session_id = session_id
-        self.raw_data = raw_data
-        self.handler = handler
-        self.messages = []
-        self.junit_version = global_junit_version
-
-        self.query_data = self.prepare_query_arguments()
-        self.session_running = False
-        self._cancel_event = threading.Event()
-
-    def prepare_query_arguments(self):
-        # do with session_meta_data
-        return {x: self.raw_data[x] for x in self.required_fields }
-
-    def start_query(self):
-        if not self.session_running:
-            self.session_running = True
-            logger.info(f'Starting query session {self.session_id}')
-            try:
-                main.main(**self.query_data, query_session = self)
-            except GenerationCancelled:
-                logger.info(f'Query session {self.session_id} cancelled by user')
-            finally:
-                self.session_running = False
-
-    def update_messages(self, messages):
-        self.messages = messages
-        data_to_send = {
-            'session_id': self.session_id,
-            'messages': messages
-        }
-        self._safe_write(ModelMessage(data_to_send).response())
-
-    def write_start_message(self):
-        data = {
-            'session_id': self.session_id
-        }
-        self._safe_write(StatusMessage('start', data).response())
-
-    def write_noref_message(self):
-        data = {
-            'session_id': self.session_id,
-            'junit_version': self.junit_version
-        }
-        self._safe_write(NoRefMessage(data).response())
-
-    def write_finish_message(self):
-        data = {
-            'session_id': self.session_id
-        }
-        self._safe_write(StatusMessage('finish', data).response())
-
-    def request_stop(self):
-        self._cancel_event.set()
-
-    def should_stop(self):
-        return self._cancel_event.is_set()
-
-    def _safe_write(self, payload: bytes):
-        try:
-            self.handler.write_single_line(payload)
-        except BrokenPipeError:
-            logger.warning(f'Connection closed for session {self.session_id}')
-            self.request_stop()
-
-# Not used now, we still send raw time
-def get_hash(s: str):
-    h = hashlib.sha256(s.encode('utf-8'))
-    return h.hexdigest()
-
-def assign_to_session(query_text: str, query_handler: QueryHandler) -> Optional[ModelQuerySession]:
-    query_data = json.loads(query_text)
-    request_payload = validate_query_payload(query_data)
-
-    session_id = uuid.uuid4().hex
-    new_session = ModelQuerySession(session_id, request_payload, query_handler)
-    session_registry.register(new_session)
-    return new_session
-
-def validate_query_payload(payload: dict) -> dict:
-    if payload.get('type') != 'query':
-        raise ValueError('Unsupported request type')
-    data = payload.get('data')
-    if not isinstance(data, dict):
-        raise ValueError('Query data must be a JSON object')
-    missing = [field for field in ModelQuerySession.required_fields if field not in data]
-    if missing:
-        raise ValueError(f"Missing required fields: {', '.join(missing)}")
-    return data
-
-# def find_open_port():
-#     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-#         s.bind(('', 0))  # Bind to any available port
-#         return s.getsockname()[1]  # Return the port number
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-def start_http_server(port: int):
-    logger.info(f'Starting HTTP server on port {port}')
 
+class ResponseStream:
+    """封装 Handler 的写操作，确保线程安全。"""
+
+    def __init__(self, handler: BaseHTTPRequestHandler) -> None:
+        self._handler = handler
+        self._lock = threading.Lock()
+
+    def __call__(self, data: bytes) -> None:
+        with self._lock:
+            self._handler.wfile.write(data + b"\n")
+            self._handler.wfile.flush()
+
+
+def run_generation(query_data: Dict[str, Any], session: ModelQuerySession) -> None:
+    generation_entry_module.main(**query_data, query_session=session)
+
+
+def build_session(payload: Dict[str, Any], handler: BaseHTTPRequestHandler) -> ModelQuerySession:
+    session_id = payload["session_id"]
+    response_stream = ResponseStream(handler)
+    return ModelQuerySession(
+        session_id=session_id,
+        raw_data=payload["data"],
+        writer=response_stream,
+        executor=run_generation,
+        junit_version=_global_junit_version,
+    )
+
+
+def validate_query_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    if payload.get("type") != "query":
+        raise ValueError("Unsupported request type")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise ValueError("Query data must be a JSON object")
+    missing = [field for field in ModelQuerySession.required_fields if field not in data]
+    if missing:
+        raise ValueError(f"Missing required fields: {', '.join(missing)}")
+    return {"session_id": payload.get("session_id") or payload.get("id") or handler_uuid(), "data": data}
+
+
+def handler_uuid() -> str:
+    import uuid
+
+    return uuid.uuid4().hex
+
+
+class QueryHandler(BaseHTTPRequestHandler):
+    server_version = "IntentionTestHTTP/1.0"
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/session":
+            self._handle_session_request()
+        elif self.path == "/session/stop":
+            self._handle_stop_request()
+        elif self.path == "/junitVersion":
+            self._handle_junit_version()
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def _handle_session_request(self) -> None:
+        try:
+            payload = self._read_json_body()
+            request_payload = validate_query_payload(payload)
+            session = build_session(request_payload, self)
+        except Exception as exc:  # broad catch to surface payload issues
+            logger.error("Invalid session request: %s", exc, exc_info=True)
+            self._end_with_error(400, "Bad Request", str(exc))
+            return
+
+        try:
+            _session_registry.register(session)
+            self._send_keep_alive_header()
+            session.write_start_message()
+            session.start_query()
+            session.write_finish_message()
+        except Exception as exc:
+            logger.error("Error processing session: %s", exc, exc_info=True)
+            self._end_with_error(500, "Internal Server Error", str(exc))
+        finally:
+            _session_registry.remove(session.session_id)
+            self._end_session()
+
+    def _handle_stop_request(self) -> None:
+        try:
+            payload = self._read_json_body()
+            session_id = payload.get("session_id")
+            if not session_id:
+                raise ValueError("Missing session_id")
+            session = _session_registry.get(session_id)
+            if not session:
+                self.send_response(404, "Session Not Found")
+                self.end_headers()
+                return
+            session.request_stop()
+            self.send_response(200, "Stopping")
+            self.end_headers()
+        except ValueError as exc:
+            self._end_with_error(400, "Bad Request", str(exc))
+        except Exception as exc:
+            logger.error("Failed to stop session: %s", exc, exc_info=True)
+            self._end_with_error(500, "Internal Server Error", str(exc))
+
+    def _handle_junit_version(self) -> None:
+        global _global_junit_version
+
+        try:
+            payload = self._read_json_body()
+            version = int(payload["data"])
+        except Exception as exc:
+            self._end_with_error(400, "Bad Request", f"Invalid payload: {exc}")
+            return
+
+        _global_junit_version = version
+        self.send_response(200, "Success")
+        self.end_headers()
+
+    def _send_keep_alive_header(self) -> None:
+        self.send_response(200, "Success")
+        self.send_header("Content-type", "application/json")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+    def _end_with_error(self, code: int, error_msg: str, _: str) -> None:
+        self.send_response(code, error_msg)
+        self.end_headers()
+        self._end_session()
+
+    def _end_session(self) -> None:
+        self.close_connection = True
+
+    def _read_json_body(self) -> Dict[str, Any]:
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length).decode("utf-8")
+        return json.loads(body) if body else {}
+
+
+def start_http_server(port: int) -> None:
+    logger.info("Starting HTTP server on port %s", port)
     httpd = ThreadedTCPServer(("", port), QueryHandler)
-    port = httpd.server_address[1]
-    logger.info(f'HTTP server is started and listening on {port}')
+    actual_port = httpd.server_address[1]
+    logger.info("HTTP server is listening on %s", actual_port)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        logger.info("Shutting down HTTP server")
+    finally:
+        httpd.server_close()
 
-    th = threading.Thread(target=httpd.serve_forever, daemon=True)
-    th.start()
-    th.join()
 
-# class StdioServer:
-#     def __init__(self):
-#         self.handler = QueryHandler()
-#         self.should_run = True
-
-#     def serve_forever(self):
-#         while self.should_run:
-#             request = sys.stdin.read()
-#             if request:
-#                 self.handler.handle_one_request()
-
-#     def shutdown(self):
-#         self.should_run = False
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Start the model server')
-    parser.add_argument('--port', type=int, default=8080, help='Port to start the server on')  # by default listen to a random port
-    
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Start the model server")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Port to start the server on")
     args = parser.parse_args()
     start_http_server(args.port)
+
+
+if __name__ == "__main__":
+    main()

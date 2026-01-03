@@ -4,8 +4,8 @@ import re
 
 from pyexpat.errors import messages
 
-from session_registry import ModelQuerySession
-from exceptions import GenerationCancelled
+from modules.session import ModelQuerySession
+from modules.exceptions import GenerationCancelled
 from configs import Configs
 from agents import TestGenAgent, TestRefineAgent
 from test_case_runner import TestCaseRunner

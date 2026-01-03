@@ -10,6 +10,7 @@ class Configs:
         os.environ['OPENAI_BASE_URL'] = self.openai_url
 
         self.project_name = project_name
+        # allow overriding model via config.ini -> [openai] model = ...
         self.llm_name = global_config['openai'].get('model', 'gpt-4o')
 
         self.max_context_len = 1024
