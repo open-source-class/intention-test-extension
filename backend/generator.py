@@ -23,16 +23,20 @@ class IntentionTester:
         self.generation_with_refine_log = []  # [(test_status, prompt, test_case)]
         self.query_session: ModelQuerySession | None = None
         self._cancel_check = lambda: False
+        self._message_prefix: list[dict] = []
         self._apply_cancel_hook()
 
     def connect_to_request_session(self, query_session: ModelQuerySession):
         self.query_session = query_session
         self._apply_cancel_hook()
 
+    def set_message_prefix(self, prefix: list[dict] | None) -> None:
+        self._message_prefix = list(prefix or [])
+
     def update_messages_to_remote(self, messages):
         # TODO notify front-end for messages, maybe trasmit full (instead of transmit update only)?
         if self.query_session:
-            self.query_session.update_messages(messages)
+            self.query_session.update_messages(self._message_prefix + messages)
 
     def _ensure_not_cancelled(self):
         if self.query_session and self.query_session.should_stop():

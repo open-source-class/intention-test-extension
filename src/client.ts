@@ -79,6 +79,7 @@ export class TesterSession {
         this.isCancelling = false;
         const req = request(options, (res) => {
             let status = 'before-start';
+            let pending = '';
 
             if (res.statusCode !== 200) {
                 throw new Error('Failed request from server.');
@@ -86,38 +87,49 @@ export class TesterSession {
 
             res.on('data', (chunk) => {
                 try {
-                    const msg = JSON.parse(chunk.toString());
-                    if (status === 'before-start') {
-                        // confirm start
-                        if (!(msg.type && msg.data && msg.type === 'status' && msg.data.status === 'start')) {
-                            throw TypeError('Failed to receive start message');
+                    pending += chunk.toString();
+                    let lineBreakIndex = pending.indexOf('\n');
+                    while (lineBreakIndex !== -1) {
+                        const line = pending.slice(0, lineBreakIndex).trim();
+                        pending = pending.slice(lineBreakIndex + 1);
+                        if (line.length === 0) {
+                            lineBreakIndex = pending.indexOf('\n');
+                            continue;
                         }
-                        this.activeSessionId = msg.data.session_id;
-                        status = 'started';
-                    } else if (status !== 'finished') {
-                        // receive messages
-                        if (msg.type && msg.data) {
-                            if (msg.type === 'status' && msg.data.status === 'finish') {
-                                status = 'finished';
-                                this.activeSessionId = undefined;
-                                this.finishActiveRequest?.();
-                                return;
-                            } else if (msg.type === 'msg' && msg.data.session_id && msg.data.messages) {
-                                if (this.updateMessageCallback) {
-                                    this.updateMessageCallback(msg.data.messages);
-                                }
-                            } else if (msg.type === 'noreference' && msg.data.session_id) {
-                                const junit_version = msg.data.junit_version;
-                                if (this.showNoRefMsg) {
-                                    this.showNoRefMsg(junit_version);
+                        const msg = JSON.parse(line);
+                        if (status === 'before-start') {
+                            // confirm start
+                            if (!(msg.type && msg.data && msg.type === 'status' && msg.data.status === 'start')) {
+                                throw TypeError('Failed to receive start message');
+                            }
+                            this.activeSessionId = msg.data.session_id;
+                            status = 'started';
+                        } else if (status !== 'finished') {
+                            // receive messages
+                            if (msg.type && msg.data) {
+                                if (msg.type === 'status' && msg.data.status === 'finish') {
+                                    status = 'finished';
+                                    this.activeSessionId = undefined;
+                                    this.finishActiveRequest?.();
+                                    return;
+                                } else if (msg.type === 'msg' && msg.data.session_id && msg.data.messages) {
+                                    if (this.updateMessageCallback) {
+                                        this.updateMessageCallback(msg.data.messages);
+                                    }
+                                } else if (msg.type === 'noreference' && msg.data.session_id) {
+                                    const junit_version = msg.data.junit_version;
+                                    if (this.showNoRefMsg) {
+                                        this.showNoRefMsg(junit_version);
+                                    }
+                                } else {
+                                    throw TypeError('Invalid message type');
                                 }
                             } else {
-                                throw TypeError('Invalid message type');
+                                throw TypeError('Invalid message format');
                             }
-                        } else {
-                            throw TypeError('Invalid message format');
+                            console.log(msg);
                         }
-                        console.log(msg);
+                        lineBreakIndex = pending.indexOf('\n');
                     }
                     
                 } catch (e) {

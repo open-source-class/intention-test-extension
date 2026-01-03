@@ -1,8 +1,9 @@
 from user_config import global_config
 import os
+import re
 
 class Configs:
-    def __init__(self, project_name, tester_path = '') -> None:
+    def __init__(self, project_name, tester_path = '', llm_name_override: str | None = None) -> None:
         self.root_dir = os.path.abspath(os.path.dirname(__file__))
         self.openai_api_key = global_config['openai']['apikey']
         self.openai_url = global_config['openai']['url']
@@ -10,8 +11,14 @@ class Configs:
         os.environ['OPENAI_BASE_URL'] = self.openai_url
 
         self.project_name = project_name
-        # allow overriding model via config.ini -> [openai] model = ...
-        self.llm_name = global_config['openai'].get('model', 'gpt-4o')
+        # allow overriding model via config.ini -> [openai] model/models = ...
+        raw_models = global_config['openai'].get('models', '').strip()
+        if not raw_models:
+            raw_models = global_config['openai'].get('model', 'gpt-4o')
+        self.llm_names = [name.strip() for name in re.split(r'[,\n]+', raw_models) if name.strip()]
+        if not self.llm_names:
+            self.llm_names = ['gpt-4o']
+        self.llm_name = llm_name_override or self.llm_names[0]
 
         self.max_context_len = 1024
         self.max_input_len = 4096

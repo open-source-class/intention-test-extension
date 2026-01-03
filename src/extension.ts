@@ -170,9 +170,13 @@ async function updateMessage(msg: any, i: number, allMsg: any, ui: TesterWebView
     content = content.replace(/```.*?```/gs, (s: string) => {
         return s.replace(/^[0-9]+:/gm, '');
     });
+    const senderType = msg.role === 'assistant' && msg.model
+        ? `assistant (${msg.model})`
+        : undefined;
     await ui.showMessage({
         role: msg.role,
-        content: marked.parse(content)
+        content: marked.parse(content),
+        senderType
     });
 
     // show test code diff if matches

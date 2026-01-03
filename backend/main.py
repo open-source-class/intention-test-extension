@@ -141,10 +141,7 @@ def main(target_focal_method, target_focal_file, test_desc, project_path, focal_
             for i in range(corpus_len)
         ]
 
-    # prepare test generator
-    dtester = IntentionTester(configs)
-
-    # start generating test case
+    # start generating test case(s)
 
     # TODO extract context from local java files
     target_pair_idx = 0
@@ -167,18 +164,29 @@ def main(target_focal_method, target_focal_file, test_desc, project_path, focal_
     facts, facts_sim, usages, usages_sim = get_crucial_facts_offline(target_pair_idx, offline_fact_ref_data, focal_method_name)
 
     logger.info('Starting a multi-round chat for generating test case')
-    # generate the test case
-    generated_test_case, test_status, messages = dtester.generate_test_case_with_refine(
-        target_focal_method=target_focal_method,
-        target_context=target_focal_file,
-        target_test_case_desc=target_test_case_desc,
-        target_test_case_path=target_test_case_path,
-        referable_test_case=top_1_reference_tc_rag,
-        facts=facts,
-        junit_version=str(query_session.junit_version),
-        query_session=query_session
-    )
-    
+    messages: list[dict] = []
+    generated_test_case = None
+    for model_name in configs.llm_names:
+        model_configs = Configs(project_name, tester_path, llm_name_override=model_name)
+        dtester = IntentionTester(model_configs)
+        dtester.connect_to_request_session(query_session)
+
+        messages.append({"role": "system", "content": f"### Model: {model_name}"})
+        dtester.set_message_prefix(messages)
+
+        # generate the test case
+        generated_test_case, test_status, model_messages = dtester.generate_test_case_with_refine(
+            target_focal_method=target_focal_method,
+            target_context=target_focal_file,
+            target_test_case_desc=target_test_case_desc,
+            target_test_case_path=target_test_case_path,
+            referable_test_case=top_1_reference_tc_rag,
+            facts=facts,
+            junit_version=str(query_session.junit_version),
+            query_session=query_session
+        )
+        messages = messages + model_messages
+
     return messages, generated_test_case
 
 
@@ -224,4 +232,3 @@ def get_crucial_facts_offline(coverage_idx: int, offline_facts, focal_method_nam
     top_disc_facts = top_disc_facts_sig
 
     return top_disc_facts, top_disc_facts_sim, top_usages, top_usages_sim
-

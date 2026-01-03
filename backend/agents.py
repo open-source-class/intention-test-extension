@@ -32,6 +32,7 @@ class Agent:
             'qwen-plus',
             'qwen-coder-plus',
             'qwen-long-latest',
+            'qwen-long-2025-01-25',
         ):
             if self.system_prompt:
                 messages = [{'role': 'system', 'content': self.system_prompt}] + messages
@@ -338,7 +339,7 @@ class TestGenAgent(Agent):
         
         raw_response = self.get_response(messages, n=self.n_responses, skip_deepseek_think=self.skip_deepseek_think)
 
-        messages.append({"role": "assistant", "content": raw_response})
+        messages.append({"role": "assistant", "content": raw_response, "model": self.model_name})
         
         generated_tc = self.extract_code_from_response(raw_response)
         return generated_tc, prompt, messages
@@ -349,7 +350,7 @@ class TestGenAgent(Agent):
 
         raw_response = self.get_response(messages, n=self.n_responses, skip_deepseek_think=self.skip_deepseek_think)
 
-        messages.append({"role": "assistant", "content": raw_response})
+        messages.append({"role": "assistant", "content": raw_response, "model": self.model_name})
 
         return messages
 
@@ -407,7 +408,7 @@ class TestRefineAgent(Agent):
         
         generated_tc = self.extract_code_from_response(raw_response)
 
-        messages.append({"role": "assistant", "content": raw_response})
+        messages.append({"role": "assistant", "content": raw_response, "model": self.model_name})
         return generated_tc, prompt, messages
 
     def construct_prompt(self, gen_test_case, error_msg, target_focal_method, target_context, target_test_desc, facts: list, forbid_using_facts: bool=False):
