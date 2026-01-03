@@ -2,13 +2,12 @@
     --surface-background: var(--vscode-sideBar-background, #f5f5f5);
     --surface-card: var(--vscode-editorWidget-background, #ffffff);
     --surface-muted: var(--vscode-editor-inactiveSelectionBackground, rgba(0, 0, 0, 0.05));
-    --border-color: var(--vscode-editorWidget-border, rgba(0, 0, 0, 0.08));
-    --border-strong: color-mix(in srgb, var(--border-color) 70%, transparent);
+    --border-color: var(--vscode-editorWidget-border, rgba(0, 0, 0, 0.12));
     --assistant-accent: var(--vscode-testing-iconPassed, #2ea043);
     --user-accent: var(--vscode-testing-iconQueued, #007acc);
-    --code-block-bg: var(--vscode-editor-background, #1e1e1e);
-    --code-block-foreground: var(--vscode-editor-foreground, #d4d4d4);
-    --code-block-border: var(--vscode-editor-lineHighlightBorder, rgba(255, 255, 255, 0.08));
+    --code-block-bg: var(--vscode-editor-background, #f3f4f6);
+    --code-block-foreground: var(--vscode-editor-foreground, #111827);
+    --code-block-border: var(--border-color);
     --link-color: var(--vscode-textLink-foreground, #3794ff);
     --toolbar-bg: var(--vscode-sideBarSectionHeader-background, rgba(255, 255, 255, 0.2));
     --hint-text: var(--vscode-descriptionForeground, rgba(0, 0, 0, 0.6));
@@ -16,7 +15,6 @@
     --warn: var(--vscode-charts-orange, #ffab70);
     --ok: var(--vscode-testing-iconPassed, #2ea043);
     --idle: var(--vscode-foreground, #4b5563);
-    --grid-line: color-mix(in srgb, var(--border-color) 60%, transparent);
 }
 
 html {
@@ -30,10 +28,7 @@ body {
     flex-direction: column;
     min-height: 100vh;
     overflow-y: auto;
-    background:
-        radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--surface-muted) 55%, transparent), transparent 35%),
-        radial-gradient(circle at 80% 0%, color-mix(in srgb, var(--surface-muted) 45%, transparent), transparent 32%),
-        linear-gradient(120deg, color-mix(in srgb, var(--surface-background) 92%, transparent), var(--surface-background));
+    background: var(--surface-background);
     color: var(--vscode-sideBar-foreground, #1e1e1e);
     font-family: var(--vscode-font-family, "Segoe UI", "Helvetica Neue", Arial, sans-serif);
     gap: 16px;
@@ -52,26 +47,16 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 20px;
-    background-color: var(--surface-card);
-    border-radius: 16px;
-    border: 1px solid var(--border-strong);
-    box-shadow:
-        0 14px 30px rgba(0, 0, 0, 0.08),
-        inset 0 0 0 1px color-mix(in srgb, var(--border-color) 40%, transparent);
+    padding: 4px 2px;
     box-sizing: border-box;
-    background-image: linear-gradient(90deg, transparent 0, transparent 95%, var(--grid-line) 95%),
-        linear-gradient(180deg, transparent 0, transparent 95%, var(--grid-line) 95%);
-    background-size: 16px 16px;
 }
 
 #no-message {
     background-color: var(--surface-card);
     border: 1px dashed var(--border-color);
-    border-radius: 16px;
-    padding: 32px;
+    border-radius: 12px;
+    padding: 24px;
     text-align: center;
-    box-shadow: inset 0 0 0 1px var(--surface-muted);
 }
 
 #no-message h1 {
@@ -85,16 +70,14 @@ body {
 }
 
 .message {
-    margin: 0 0 24px 0;
-    border-radius: 12px;
-    transition: all 0.25s ease-in-out;
-    overflow: hidden;
+    margin: 0 0 16px 0;
+    border-radius: 10px;
+    transition: background-color 0.2s ease-in-out;
     width: 100%;
     max-width: 100%;
     background-color: var(--surface-card);
     border: 1px solid var(--border-color);
-    padding: 12px 16px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+    padding: 12px 14px;
     box-sizing: border-box;
     word-break: break-word;
 }
@@ -106,15 +89,13 @@ body {
 }
 
 .message.assistant {
-    border-left: 4px solid var(--assistant-accent);
-    background-image: linear-gradient(135deg, rgba(46, 160, 67, 0.08), transparent);
+    border-left: 3px solid var(--assistant-accent);
     margin-right: auto;
 }
 
 .message.user,
 .message.system {
-    background-image: linear-gradient(135deg, rgba(0, 122, 204, 0.08), transparent);
-    border-left: 4px solid var(--user-accent);
+    border-left: 3px solid var(--user-accent);
     margin-right: auto;
 }
 
@@ -175,12 +156,11 @@ body {
     position: relative;
     background-color: var(--code-block-bg);
     color: var(--code-block-foreground);
-    border-radius: 12px;
-    padding: 16px;
+    border-radius: 10px;
+    padding: 12px 14px;
     margin: 0.6em 0;
     overflow-x: auto;
     border: 1px solid var(--code-block-border);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
     box-sizing: border-box;
     width: 100%;
     max-width: 100%;
@@ -210,11 +190,9 @@ body {
 
 .message-header {
     font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-weight: 600;
     color: var(--vscode-descriptionForeground, rgba(0, 0, 0, 0.55));
-    margin: 4px 0 6px;
+    margin: 0 0 6px;
 }
 
 .typing {
@@ -222,7 +200,7 @@ body {
     align-items: center;
     gap: 6px;
     background-color: var(--surface-muted);
-    padding: 12px;
+    padding: 10px 12px;
     border-radius: 8px;
 }
 
@@ -315,12 +293,10 @@ body {
     flex-wrap: wrap;
     background-color: var(--toolbar-bg);
     border: 1px solid var(--border-color);
-    border-radius: 16px;
-    padding: 16px 20px;
-    margin-bottom: 12px;
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
     gap: 12px;
-    backdrop-filter: blur(12px);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
 }
 
 #toolbar .title {
@@ -349,20 +325,19 @@ body {
 .toolbar-actions button {
     border: 1px solid var(--border-color);
     border-radius: 999px;
-    padding: 8px 14px;
+    padding: 6px 12px;
     background-color: var(--surface-card);
     color: inherit;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    transition: background-color 0.15s ease;
     display: inline-flex;
     align-items: center;
     gap: 6px;
 }
 
 .toolbar-actions button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.08);
+    background-color: var(--surface-muted);
 }
 
 .toolbar-actions button:disabled {
